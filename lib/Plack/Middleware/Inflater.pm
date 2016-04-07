@@ -63,3 +63,36 @@ sub call {
 }
 
 1;
+__END__
+=pod
+
+=head1 SYNOPSIS
+
+  use Plack::Builder;
+  builder {
+      enable 'Inflater', content_encoding => [qw/gzip deflate/];
+      sub {
+          my $request = Plack::Request->new(shift);
+          my $response = $request->new_response(
+              200,
+              ['X-Request-Content-Length', $request->header('Content-Length'),
+               'X-Request-Content', $request->content],
+              'OK');
+          return $response->finalize;
+      };
+  };
+
+=head1 DESCRIPTION
+
+This PSGI middleware inflates incoming gzipped requests before they
+hit your PSGI app.  This only happens whenever the request's
+C<Content-Encoding> header is one of the values specified in the
+C<content_encoding> attribute, which defaults to C<['gzip']>.
+
+This lets you send compressed requests, like this:
+
+  curl --header 'Content-Encoding: gzip' --data-binary @foobar.gz http://...
+
+=head1 SEE ALSO
+
+L<Plack>
