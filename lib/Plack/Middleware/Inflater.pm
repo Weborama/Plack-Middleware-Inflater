@@ -1,0 +1,65 @@
+package Plack::Middleware::Inflater;
+
+# ABSTRACT: Inflate gzipped PSGI requests
+
+use strict;
+use warnings;
+use 5.012;
+use Carp;
+use autodie;
+use utf8;
+
+use base 'Plack::Middleware';
+use Plack::Util;
+use Plack::Util::Accessor qw/content_encoding/;
+use IO::Uncompress::Gunzip qw/gunzip/;
+use IO::Scalar;
+
+sub prepare_app {
+    my $self = shift;
+    unless ($self->content_encoding) {
+        $self->content_encoding([qw/gzip/]);
+    }
+}
+
+sub modify_request_maybe {
+    my ($self, $env) = @_;
+
+    return if $env->{'plack.skip-inflater'};
+
+    my $content_encoding = $env->{HTTP_CONTENT_ENCODING} or return;
+
+    # this thing stolen from Plack::Middleware::Deflater
+    $content_encoding =~ s/(;.*)$//;
+    if (my $match_cts = $self->content_encoding) {
+        my $match=0;
+        for my $match_ct ( @{$match_cts} ) {
+            if ($content_encoding eq $match_ct) {
+                $match++;
+                last;
+            }
+        }
+        return unless $match;
+    }
+
+    # if we're here it's one of the values of Content-Type that we
+    # want to inflate as gzip
+
+    if ($env->{'psgi.input'}) {
+        my $inflated = '';
+        gunzip $env->{'psgi.input'}, \$inflated;
+        $env->{'psgi.input'} = IO::Scalar->new(\$inflated);
+        my $content_length = do {
+            use bytes;
+            length $inflated };
+        $env->{CONTENT_LENGTH} = $content_length;
+    }
+}
+
+sub call {
+    my ($self, $env) = @_;
+    $self->modify_request_maybe($env);
+    return $self->app->($env);
+}
+
+1;
